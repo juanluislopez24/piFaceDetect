@@ -13,7 +13,7 @@ def detect_faces(classifier, inputQueue, outputQueue):
 	# keep looping
 	while True:
 		# check to see if there is a frame in our input queue
-	    if not inputQueue.empty():
+	    if (inputQueue.empty() == False):
 		    frame = inputQueue.get()
 		    frame = cv2.resize(frame, (300, 300))
 		    gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
