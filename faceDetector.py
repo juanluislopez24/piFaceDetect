@@ -52,7 +52,7 @@ class FaceDetector(object):
 
             # check to see if our detectios are not None (and if so, we'll
             # draw the detections on the frame)
-            if faces is not None:
+            if self.faces is not None:
                 #send to our machine learning service
                 device = Device()
 
