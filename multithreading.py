@@ -30,7 +30,7 @@ faces = None
 
 print("[INFO] starting process...")
 p = Process(target=detect_faces, args=(face_cascade, inputQueue,
-	outputQueue,))
+	outputQueue))
 p.daemon = True
 p.start()
 
@@ -58,8 +58,7 @@ while True:
     # draw the detections on the frame)
     if faces is not None:
         #send to our machine learning service
-        
-        
+
         for (x,y,w,h) in faces:
             cv2.rectangle(frame,(x,y),(x+w,y+h),(255,255,0),2)
 
