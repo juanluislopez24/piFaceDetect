@@ -8,15 +8,25 @@ import imutils
 import time
 import cv2
 from device import Device
+import base64
+import json
+
+# [END iot_mqtt_includes]
+
+# The initial backoff time after a disconnection occurs, in seconds.
+minimum_backoff_time = 1
+
+
 
 class FaceDetector(object):
-    def __init__(self):
+    def __init__(self, args):
         self.inputQueue = Queue(maxsize=1)
         self.outputQueue = Queue(maxsize=1)
         self.face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
         self.faces = None
         self.p = Process(target=self.detect_faces, args=(self.face_cascade, self.inputQueue, self.outputQueue))
-
+        self.args = args
+        
 
     def detect_faces(self, classifier, inputQueue, outputQueue):
     # keep looping
@@ -33,6 +43,22 @@ class FaceDetector(object):
 
     def stream(self):
         print("[INFO] starting process...")
+
+
+        global minimum_backoff_time
+
+        #Topic used to send img data to
+        mqtt_img_topic = '/devices/{}/events/imgtopic'.format(args.device_id)
+
+        device = Device()
+
+        jwt_iat = datetime.datetime.utcnow()
+        jwt_exp_mins = self.args.jwt_expires_minutes
+        client = device.get_client(
+            self.args.project_id, self.args.cloud_region, self.args.registry_id, self.args.device_id,
+            self.args.private_key_file, self.args.algorithm, self.args.ca_certs,
+            self.args.mqtt_bridge_hostname, self.args.mqtt_bridge_port)
+
         self.p.start()
         vs = VideoStream(usePiCamera=True).start()
         time.sleep(2.0)
@@ -54,7 +80,59 @@ class FaceDetector(object):
             # check to see if our detectios are not None (and if so, we'll
             # draw the detections on the frame)
             if self.faces is not None:
-                #send to our machine learning service
+                # Process network events.
+                client.loop()
+
+                # Wait if backoff is required.
+                if should_backoff:
+                    # If backoff time is too large, give up.
+                    if minimum_backoff_time > MAXIMUM_BACKOFF_TIME:
+                        print('Exceeded maximum backoff time. Giving up.')
+                        break
+
+                    # Otherwise, wait and connect again.
+                    delay = minimum_backoff_time + random.randint(0, 1000) / 1000.0
+                    print('Waiting for {} before reconnecting.'.format(delay))
+                    time.sleep(delay)
+                    minimum_backoff_time *= 2
+                    client.connect(args.mqtt_bridge_hostname, args.mqtt_bridge_port)
+
+
+                #prepare to our machine learning service
+                basejpg =cv2.imencode('.jpg', baseImage)[1]
+                base64_bytes = base64.b64encode(basejpg)
+                base64_imgstr = base64_bytes.decode('utf-8')
+
+
+                # [START iot_mqtt_jwt_refresh]
+                seconds_since_issue = (datetime.datetime.utcnow() - jwt_iat).seconds
+                if seconds_since_issue > 60 * jwt_exp_mins:
+                    print('Refreshing token after {}s').format(seconds_since_issue)
+                    jwt_iat = datetime.datetime.utcnow()
+                    client = device.get_client(
+                        args.project_id, args.cloud_region,
+                        args.registry_id, args.device_id, args.private_key_file,
+                        args.algorithm, args.ca_certs, args.mqtt_bridge_hostname,
+                        args.mqtt_bridge_port)
+                # [END iot_mqtt_jwt_refresh]
+
+
+                # Build JSON Payload
+                payload = json.dumps({
+                    #device info
+                    'registry_id': args.registry_id,
+                    'device_id': args.device_id,
+                    #img base85 in utf-8
+                    'img': base64_imgstr,
+                    #timestamp
+                    'timestamp_local': datetime.datetime.now(),
+                    'timestamp_utc': datetime.datetime.utcnow(),
+                }, indent=4, default=str)
+
+                # Publish image payload to imgtopic
+                print('Publishing image payload encoded to base64 over JSON')
+        
+                client.publish(mqtt_img_topic, payload, qos=1)
                 
 
 
@@ -80,3 +158,4 @@ class FaceDetector(object):
         # do a bit of cleanup
         cv2.destroyAllWindows()
         vs.stop()
+        exit()

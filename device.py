@@ -1,21 +1,74 @@
+import base64
+import argparse
+import datetime
+import json
+import os
+import random
+import ssl
+import time
+
+import jwt
+import paho.mqtt.client as mqtt
+import psutil
+
+# [END iot_mqtt_includes]
+
+# The initial backoff time after a disconnection occurs, in seconds.
+minimum_backoff_time = 1
+
+# The maximum backoff time before giving up, in seconds.
+MAXIMUM_BACKOFF_TIME = 32
+
+# Whether to wait with exponential backoff before publishing.
+should_backoff = False
+
+# [START iot_mqtt_jwt]
+def create_jwt(project_id, private_key_file, algorithm):
+    """Creates a JWT (https://jwt.io) to establish an MQTT connection.
+        Args:
+         project_id: The cloud project ID this device belongs to
+         private_key_file: A path to a file containing either an RSA256 or
+                 ES256 private key.
+         algorithm: The encryption algorithm to use. Either 'RS256' or 'ES256'
+        Returns:
+            An MQTT generated from the given project_id and private key, which
+            expires in 20 minutes. After 20 minutes, your client will be
+            disconnected, and a new JWT will have to be generated.
+        Raises:
+            ValueError: If the private_key_file does not contain a known key.
+        """
+
+    token = {
+            # The time that the token was issued at
+            'iat': datetime.datetime.utcnow(),
+            # The time the token expires.
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=60),
+            # The audience field should always be set to the GCP project id.
+            'aud': project_id
+    }
+
+    # Read the private key file.
+    with open(private_key_file, 'r') as f:
+        private_key = f.read()
+
+    print('Creating JWT using {} from private key file {}'.format(
+            algorithm, private_key_file))
+
+    return jwt.encode(token, private_key, algorithm=algorithm)
+# [END iot_mqtt_jwt]
+
+
+# [START iot_mqtt_config]
+def error_str(rc):
+    """Convert a Paho error to a human readable string."""
+    return '{}: {}'.format(rc, mqtt.error_string(rc))
+
 class Device(object):
     """Represents the state of a single device."""
 
     def __init__(self):
-        self.temperature = 0
-        self.fan_on = False
         self.connected = False
-    
-    def update_sensor_data(self):
-        """Pretend to read the device's sensor data.
-        If the fan is on, assume the temperature decreased one degree,
-        otherwise assume that it increased one degree.
-        """
-        if self.fan_on:
-            self.temperature -= 1
-        else:
-            self.temperature += 1
-
+ 
     def wait_for_connection(self, timeout):
         """Wait for the device to become connected."""
         total_time = 0
@@ -53,37 +106,6 @@ class Device(object):
         """Callback when the device receives a PUBACK from the MQTT bridge."""
         print('Published message acked.')
 
-    def on_subscribe(self, unused_client, unused_userdata, unused_mid,
-                     granted_qos):
-        """Callback when the device receives a SUBACK from the MQTT bridge."""
-        print('Subscribed: ', granted_qos)
-        if granted_qos[0] == 128:
-            print('Subscription failed.')
-
-    def on_message(self, unused_client, unused_userdata, message):
-        """Callback when the device receives a message on a subscription."""
-        payload = str(message.payload)
-        print('Received message \'{}\' on topic \'{}\' with Qos {}'.format(
-            payload, message.topic, str(message.qos)))
-
-        # The device will receive its latest config when it subscribes to the
-        # config topic. If there is no configuration for the device, the device
-        # will receive a config with an empty payload.
-        if not payload:
-            return
-
-        # The config is passed in the payload of the message. In this example,
-        # the server sends a serialized JSON string.
-        data = json.loads(payload)
-        if data['fan_on'] != self.fan_on:
-            # If changing the state of the fan, print a message and
-            # update the internal state.
-            self.fan_on = data['fan_on']
-            if self.fan_on:
-                print('Fan turned on.')
-            else:
-                print('Fan turned off.')
-
     def get_client(self,
         project_id, cloud_region, registry_id, device_id, private_key_file,
         algorithm, ca_certs, mqtt_bridge_hostname, mqtt_bridge_port):
@@ -113,15 +135,12 @@ class Device(object):
         client.on_connect = self.on_connect
         client.on_publish = self.on_publish
         client.on_disconnect = self.on_disconnect
-        client.on_message = self.on_message
 
         # Connect to the Google MQTT bridge.
         client.connect(mqtt_bridge_hostname, mqtt_bridge_port)
 
-        # This is the topic that the device will receive configuration updates on.
-        mqtt_config_topic = '/devices/{}/config'.format(device_id)
-
-        # Subscribe to the config topic.
-        client.subscribe(mqtt_config_topic, qos=1)
-
         return client
+
+
+
+
