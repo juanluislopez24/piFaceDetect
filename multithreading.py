@@ -21,7 +21,7 @@ def detect_faces(classifier, inputQueue, outputQueue):
 		    # write the detections to the output queue
             faces = face_cascade.detectMultiScale(gray, 1.1, 5)
             outputQueue.put(faces)
-            #print('hey')
+            print('hey')
 
 face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 
