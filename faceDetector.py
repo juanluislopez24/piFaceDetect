@@ -49,7 +49,7 @@ class FaceDetector(object):
 
             # if the output queue *is not* empty, grab the detections
             if not self.outputQueue.empty():
-                faces = self.outputQueue.get()
+                self.faces = self.outputQueue.get()
 
             # check to see if our detectios are not None (and if so, we'll
             # draw the detections on the frame)
