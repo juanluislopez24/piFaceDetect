@@ -37,6 +37,7 @@ class FaceDetector(object):
         vs = VideoStream(usePiCamera=True).start()
         time.sleep(2.0)
         fps = FPS().start()
+        device = Device()
         while True:
             frame = vs.read()
             frame = imutils.resize(frame, width=400)
@@ -54,10 +55,10 @@ class FaceDetector(object):
             # draw the detections on the frame)
             if self.faces is not None:
                 #send to our machine learning service
-                device = Device()
+                
 
 
-                for (x,y,w,h) in faces:
+                for (x,y,w,h) in self.faces:
                     cv2.rectangle(frame,(x,y),(x+w,y+h),(255,255,0),2)
 
                 # show the output frame
